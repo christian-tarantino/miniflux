@@ -69,8 +69,10 @@ The training pipeline processes a curated subset of CC12M (~500,000 text-image p
 
 ## 💾 Checkpoints & Resources
 
-- **MMDiT Weights:** [Hugging Face Repository Link - Coming Soon]
-- **Pre-encoded Training Datasets:** [christian-tarantino/cc12m-500k-encoded](https://huggingface.co/datasets/christian-tarantino/cc12m-500k-encoded) on Hugging Face
+- **miniflux MMDiT Weights:** `[Coming Soon]` — Core 450M Rectified Flow Transformer checkpoint.
+- **Flux.2 VAE Weights:** Available on [Hugging Face](https://huggingface.co/black-forest-labs/flux-3-image-klein-comfy/tree/main/vae) (Official Black Forest Labs 32-channel VAE).
+- **Experimental VAE Weights:** [christian-tarantino/vae_ultraedit](https://huggingface.co/christian-tarantino/vae_ultraedit/) — Custom LPIPS + GAN + KL Autoencoder trained on UltraEdit.
+- **Pre-encoded Training Datasets:** [christian-tarantino/cc12m-500k-encoded](https://huggingface.co/datasets/christian-tarantino/cc12m-500k-encoded) — Pre-processed HDF5 dataset (~500k text-image latents).
 
 ## 📂 Repository Structure
 
