@@ -76,13 +76,17 @@ The training pipeline processes a curated subset of CC12M (~500,000 text-image p
 
 ```text
 .
+├── flux/
+│       └── flux2_vae.safetensors  # Pretrained Flux.2 VAE weights
+├── dataset/
+│   └── *.h5                        # Pre-encoded HDF5 dataset files
 ├── model/
-│   ├── model.py            # Custom PyTorch implementation of MMDiT, RoPE2D, and SwiGLU AdaLN
-│   └── vae_model.py        # Custom experimental VAE (LPIPS, Discriminator, KL-loss)
-├── train.py                # Main training pipeline (Rectified Flow, compilation, multi-bucket I/O)
-├── train_vae.py            # Standalone training script for experimental VAE validation
-├── inference.py            # Classifier-Free Guidance (CFG) sampling & VAE decoding pipeline
-├── vae_extractor.py        # Pre-processing utility for encoding image datasets into HDF5
-├── requirements.txt        # Python package dependencies
-└── README.md               # Project documentation
+│   ├── model.py                    # Custom PyTorch MMDiT (RoPE2D, SwiGLU, AdaLN)
+│   └── vae_model.py                # Standalone experimental VAE architecture
+├── train.py                        # Main training pipeline (Rectified Flow, compilation, multi-bucket)
+├── train_vae.py                    # Standalone training script for experimental VAE
+├── inference.py                    # CFG sampling & VAE decoding pipeline
+├── vae_extractor.py                # Pre-processing utility for encoding images to HDF5
+├── requirements.txt                # Python package dependencies
+└── README.md                       # Project documentation
 ```
