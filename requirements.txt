@@ -1,0 +1,13 @@
+torch
+torchvision
+torchinfo
+safetensors
+h5py
+numpy
+tqdm
+lpips
+Pillow
+transformers
+diffusers
+aiohttp
+bitsandbytes
