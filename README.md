@@ -65,7 +65,26 @@ The training pipeline processes a curated subset of CC12M (~500,000 text-image p
 | Latent Statistics | Absolute Mean | 0.4521 | Latent distribution offset |
 | | Log-Variance Mean | -0.8563 | Variance scaling |
 
+### Qualitative Validation Split Results
 
+<table>
+  <thead>
+    <tr>
+      <th align="center" width="33%">Input Image</th>
+      <th align="center" width="33%">Target Image (Ground Truth)</th>
+      <th align="center" width="33%">VAE Reconstruction</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td colspan="3" align="center">
+        <img src="experimental_vae/vae_image_reconstruction_1.png" alt="Validation Grid" width="100%">
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+*Fig. 1: Qualitative reconstruction comparison at 512x512 resolution on the UltraEdit validation split.*
 
 ##  Checkpoints & Resources
 
