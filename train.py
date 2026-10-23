@@ -22,6 +22,28 @@ BF16_OK = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
 DTYPE = torch.bfloat16 if BF16_OK else torch.float16
 VAE_WEIGHTS_PATH = "LDM/flux2/flux2-vae.safetensors"
 
+def load_checkpoint(checkpoint_path, model, optimizer=None, scheduler=None, device="cuda"):
+    if not os.path.exists(checkpoint_path):
+        raise FileNotFoundError(f"Checkpoint non trovato in: {checkpoint_path}")
+        
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    
+    # Caricamento dei pesi del MMDiT
+    model.load_state_dict(checkpoint["model_state_dict"])
+    
+    # Caricamento dell'optimizer
+    if optimizer is not None and "optimizer_state_dict" in checkpoint:
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        
+    # Caricamento dello scheduler (se presente)
+    if scheduler is not None and "scheduler_state_dict" in checkpoint and checkpoint["scheduler_state_dict"] is not None:
+        scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+        
+    # Estrazione dell'epoca per riprendere il training
+    start_epoch = checkpoint.get("epoch", 0)
+    
+    print(f"✅ Checkpoint caricato correttamente da {checkpoint_path} (Ripresa dall'Epoch: {start_epoch})")
+    return start_epoch
 
 def decode_if_needed(vae: Optional[nn.Module], x: torch.Tensor) -> torch.Tensor:
     #Esegue la decodifica tramite il VAE solo se il modello VAE è disponibile
@@ -389,6 +411,8 @@ def validate(
 
     if vae is None:
         print("⚠️ Nessun VAE fornito per la decodifica delle immagini di validazione.")
+        if use_cuda:
+            torch.cuda.empty_cache()
         return val_loss, val_time, 0.0
 
     def decode_latents(latents_tensor):
@@ -399,6 +423,10 @@ def validate(
         return (decoded / 2.0 + 0.5).clamp(0.0, 1.0)
     
     # 2 CFG: Uncond, Text)
+    sample_x0 = sample_t5 = sample_clip = sample_clip_lens = None
+    uncond_t5 = uncond_clip = uncond_clip_lens = base_noise = x_ts = None
+    all_decoded_branches = gt_images = comparison_rows = final_grid = None
+
     for bucket_name, data in bucket_samples.items():
         sample_x0 = data["x0"].to(device)
         sample_t5 = data["t5"].to(device)
@@ -433,7 +461,6 @@ def validate(
                 y_t5_dual = torch.cat([uncond_t5, sample_t5], dim=0)
                 y_clip_dual = torch.cat([uncond_clip, sample_clip], dim=0)
                 
-                # CORRETTO: Concatenati anche i clip_lens per il batch duale CFG
                 clip_lens_dual = torch.cat([uncond_clip_lens, sample_clip_lens], dim=0)
 
                 v_dual = model(x_t_dual, t_dual, y_clip=y_clip_dual, y_t5=y_t5_dual, clip_lens=clip_lens_dual, cond_images=None)
@@ -466,8 +493,20 @@ def validate(
         save_image(final_grid, save_path, nrow=3)
         print(f"✅ Salvati {actual_num_samples} campioni per il bucket {bucket_name} in {save_path}")
 
+    # --- PULIZIA ESPLICITA E SVUOTAMENTO CACHE VRAM ---
+    if 'bucket_samples' in locals():
+        del bucket_samples
+    if 'sample_x0' in locals():
+        del sample_x0, sample_t5, sample_clip, sample_clip_lens
+    if 'uncond_t5' in locals():
+        del uncond_t5, uncond_clip, uncond_clip_lens, base_noise, x_ts
+    if 'all_decoded_branches' in locals():
+        del all_decoded_branches, gt_images, comparison_rows, final_grid
+
     if use_cuda:
         torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+
     sample_time = time.time() - val_start_time
 
     return val_loss, val_time, sample_time
@@ -476,15 +515,15 @@ def main():
     total_start_time = time.perf_counter()
 
     train_loaders = {
-        "512x512": DataLoader(MultiBucketH5Dataset(["dataset/cc12m_flux_encoded_512x512.h5"]), batch_size=8, shuffle=True, num_workers=2, drop_last=True, pin_memory=True),
-        #"512x768": DataLoader(MultiBucketH5Dataset(["dataset/cc12m_flux_encoded_512x768.h5"]), batch_size=8, shuffle=True, num_workers=2, drop_last=True, pin_memory=True),
-        #"768x512": DataLoader(MultiBucketH5Dataset(["dataset/cc12m_flux_encoded_768x512.h5"]), batch_size=8, shuffle=True, num_workers=2, drop_last=True, pin_memory=True),
+        "512x512": DataLoader(MultiBucketH5Dataset(["LDM/dataset/cc12m_flux_encoded_512x512.h5"]), batch_size=8, shuffle=True, num_workers=2, drop_last=True, pin_memory=True),
+        #"512x768": DataLoader(MultiBucketH5Dataset(["LDM/dataset/cc12m_flux_encoded_512x768.h5"]), batch_size=8, shuffle=True, num_workers=2, drop_last=True, pin_memory=True),
+        #"768x512": DataLoader(MultiBucketH5Dataset(["LDM/dataset/cc12m_flux_encoded_768x512.h5"]), batch_size=8, shuffle=True, num_workers=2, drop_last=True, pin_memory=True),
     }
     
     val_loaders = {
-        "512x512": DataLoader(MultiBucketH5Dataset(["dataset/cc12m_flux_encoded_512x512_val.h5"]), batch_size=8, shuffle=False, num_workers=2, pin_memory=True),
-        #"512x768": DataLoader(MultiBucketH5Dataset(["dataset/cc12m_flux_encoded_512x768_val.h5"]), batch_size=8, shuffle=False, num_workers=2, pin_memory=True),
-        #"768x512": DataLoader(MultiBucketH5Dataset(["dataset/cc12m_flux_encoded_768x512_val.h5"]), batch_size=8, shuffle=False, num_workers=2, pin_memory=True),
+        "512x512": DataLoader(MultiBucketH5Dataset(["LDM/dataset/cc12m_flux_encoded_512x512_val.h5"]), batch_size=8, shuffle=False, num_workers=2, pin_memory=True),
+        #"512x768": DataLoader(MultiBucketH5Dataset(["LDM/dataset/cc12m_flux_encoded_512x768_val.h5"]), batch_size=8, shuffle=False, num_workers=2, pin_memory=True),
+        #"768x512": DataLoader(MultiBucketH5Dataset(["LDM/dataset/cc12m_flux_encoded_768x512_val.h5"]), batch_size=8, shuffle=False, num_workers=2, pin_memory=True),
     }
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -555,15 +594,28 @@ def main():
     torch.backends.cudnn.allow_tf32 = True
     torch.backends.cudnn.benchmark = True
 
-    if hasattr(torch, 'compile'):
-        print("--> Compilazione MMDiT con torch.compile()...")
-        model = cast(nn.Module, torch.compile(model, mode="default", dynamic=False))
-    best_val_loss = float('inf')
-    scaler = None
+    CHECKPOINT_PATH = "mmdit_final_checkpoints/mmdit_best.pth"
+
+    # Ripresa dal checkpoint (passando anche lo scheduler)
+    if os.path.exists(CHECKPOINT_PATH):
+        start_epoch = load_checkpoint(CHECKPOINT_PATH, model, optimizer, scheduler=scheduler, device="cuda")
+    else:
+        start_epoch = 0
+        print("Nessun checkpoint trovato. Inizio il training da zero.")
+
     print(f"Usando device: {device}")
 
-    for epoch in range(num_epochs):
-        debug = (epoch == 0)
+    if hasattr(torch, 'compile'):
+        print("--> Compilazione MMDiT con torch.compile()...")
+        model = cast(nn.Module, torch.compile(model, mode="default", dynamic=True))
+    best_val_loss = float('inf')
+    scaler = None
+
+
+    print(f"Usando device: {device}")
+
+    for epoch in range(start_epoch, num_epochs):
+        debug = (epoch == start_epoch)
 
         train_loss, train_time, samples_per_sec = train(
             model=model, 
@@ -576,9 +628,13 @@ def main():
             p_drop_text=0.10,
             debug_first_batch=debug
         )
+        raw_model = getattr(model, "_orig_mod", model)
+        if hasattr(raw_model, "module"):
+            raw_model = raw_model.module
+        assert isinstance(raw_model, nn.Module)
 
         val_loss, val_time, sample_time = validate(
-            model=model,
+            model=raw_model,
             val_loaders=val_loaders,
             device=device,
             epoch=epoch,
@@ -599,10 +655,7 @@ def main():
         )
 
 
-        raw_model = getattr(model, "_orig_mod", model)
-        if hasattr(raw_model, "module"):
-            raw_model = raw_model.module
-        assert isinstance(raw_model, nn.Module)
+
 
         
         if val_loss < best_val_loss:
