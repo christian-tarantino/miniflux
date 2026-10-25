@@ -34,7 +34,7 @@
 | Patch Size | $2 \times 2$ | Spatial tokenization step |
 | Text Conditioning | CLIP-ViT-Base ($d=512$) + T5 1.1 Base ($d=768$) | Pooled EOS token + sequence hidden states |
 
-##  Dataset & Training Setup
+## Dataset & Training Setup
 
 The training pipeline processes a curated subset of CC12M (~500,000 text-image pairs) pre-encoded into HDF5 (`.h5`) datasets. While the codebase features native multi-bucket scheduling across multiple aspect ratios, active training is executed at a fixed $512 \times 512$ resolution to maximize execution throughput on consumer GPU hardware.
 
@@ -46,8 +46,47 @@ The training pipeline processes a curated subset of CC12M (~500,000 text-image p
 | $768 \times 512$ | Multi-Bucket Codebase Support | 122.456 Train / 1,000 Val | HDF5 (`.h5`) |
 | $512 \times 768$ | Multi-Bucket Codebase Support | 221.888 Train / 1,000 Val | HDF5 (`.h5`) |
 
- **Pre-encoded Latents Dataset:** Available on Hugging Face at [christian-tarantino/cc12m-500k-encoded](https://huggingface.co/datasets/christian-tarantino/cc12m-500k-encoded).
+**Pre-encoded Latents Dataset:** Available on Hugging Face at [christian-tarantino/cc12m-500k-encoded](https://huggingface.co/datasets/christian-tarantino/cc12m-500k-encoded).
 
+---
+
+## Training Dynamics & Qualitative Results 
+
+### Training Loss Curve & Convergence Analysis
+The model was trained for 9 epochs on the 512x512 bucket subset (~152k samples). The Rectified Flow loss achieved a stable downward trend, hitting a validation loss plateau around **0.5229** at **Epoch 7** .
+
+![Training Loss Curve](images_mmdit/curve_loss.png)
+*Fig. 2: Train vs. Validation Loss curves across 9 epochs, highlighting the Epoch 7 minimum.*
+
+### Qualitative Sampling & CFG Ablation Study
+To evaluate trajectory guidance, samples were generated using non-linear timestep shifting ($\text{shift}=1.5$) over 50 sampling steps, comparing Unconditional generation against Classifier-Free Guidance (CFG).
+
+<table>
+<thead>
+<tr>
+<th align="center" width="33%">Ground Truth ($x_0$)</th>
+<th align="center" width="33%">Unconditional ($v_{uncond}$)</th>
+<th align="center" width="33%">Text-Guided CFG ($v_{text}$)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td colspan="3" align="center">
+<img src="images_mmdit/epoch_007_512x512_cfg_comparison.png" alt="CFG Comparison Grid" width="100%">
+</td>
+</tr>
+</tbody>
+</table>
+
+*Fig. 3: Qualitative comparison at 512x512 resolution (Epoch 7 checkpoint). Left: Ground Truth latents decoded via Flux.2 VAE; Center: Unconditional diffusion trajectory; Right: Text-guided CFG trajectory.*
+### Ablation Study: Training Constraints & Architectural Trade-offs
+
+Training a 452M-parameter Multimodal Diffusion Transformer from scratch on consumer hardware (NVIDIA RTX 5070 12GB) involves navigating strict throughput and optimization boundaries. To balance execution speed (~9 samples/sec) with gradient stability within a realistic compute window, the active training partition was restricted to approximately 152k samples for the primary 512x512 bucket.
+
+A primary architectural challenge stems from the integration of the official Flux.2 32-channel VAE. Compared to traditional 4-channel or 16-channel representations, these 32-channel latents are significantly more information-dense and rich in fine-grained spatial features. Predicting such a high-dimensional continuous target under Rectified Flow matching exponentially increases the learning complexity for a 450M-parameter backbone. Furthermore, training directly on a raw, heterogeneous web-scale source like CC12M introduces substantial domain noise and uncurated alt-texts, causing an information-entropy saturation where validation loss naturally plateaus around ~0.5229.
+
+Ultimately, while the refactored architecture successfully implements fused multi-stream processing and sequence-level visual conditioning (inspired by FLUX.1 Kontext), the 450M-parameter capacity limit restricts its ability to map millions of highly disparate semantic concepts without prior large-scale foundational pre-training. As a result, the model demonstrates strong convergence on global spatial geometry, color dynamics, and structural layout, while exhibiting expected capacity constraints in fine-grained compositional text alignment.
+...
 ## Educational VAE Exploration (Preliminary R&D)
 
 > **Architectural Note:** While the core `miniflux` pipeline relies on the official 32-channel Flux.2 VAE for production latent alignment, this section documents an **isolated preliminary study**. A custom Autoencoder (LPIPS + GAN + KL) was built from scratch to analyze latent space dynamics and reconstruction behavior on 10,000 images from the UltraEdit dataset prior to integrating the Flux.2 VAE.
@@ -88,7 +127,7 @@ The training pipeline processes a curated subset of CC12M (~500,000 text-image p
 
 ##  Checkpoints & Resources
 
-- **miniflux MMDiT Weights:** `[Coming Soon]` — Core 450M Rectified Flow Transformer checkpoint.
+- **miniflux MMDiT Weights:** [christian-tarantino/miniflux](https://huggingface.co/christian-tarantino/miniflux) — Core 450M Rectified Flow Transformer checkpoint.
 - **Flux.2 VAE Weights:** Available on [Hugging Face](https://huggingface.co/black-forest-labs/flux-3-image-klein-comfy/tree/main/vae) (Official Black Forest Labs 32-channel VAE).
 - **Experimental VAE Weights:** [christian-tarantino/vae_ultraedit](https://huggingface.co/christian-tarantino/vae_ultraedit/) — Custom LPIPS + GAN + KL Autoencoder trained on UltraEdit.
 - **Pre-encoded Training Datasets:** [christian-tarantino/cc12m-500k-encoded](https://huggingface.co/datasets/christian-tarantino/cc12m-500k-encoded) — Pre-processed HDF5 dataset (~500k text-image latents).
@@ -106,7 +145,6 @@ The training pipeline processes a curated subset of CC12M (~500,000 text-image p
 │   └── vae_model.py                # Standalone experimental VAE architecture
 ├── train.py                        # Main training pipeline (Rectified Flow, compilation, multi-bucket)
 ├── train_vae.py                    # Standalone training script for experimental VAE
-├── inference.py                    # CFG sampling & VAE decoding pipeline
 ├── vae_extractor.py                # Pre-processing utility for encoding images to HDF5
 ├── requirements.txt                # Python package dependencies
 └── README.md                       # Project documentation
